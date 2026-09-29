@@ -1,0 +1,14 @@
+/_build/
+/doc/
+/wa_wasi_ex/_build/
+/wa_wasi_ex/deps/
+/wa_wasi_ex/doc/
+/wa_wasi_ex/*.tar
+/test_data/build/
+/test_data/wat/*.wasm
+erl_crash.dump
+*.beam
+.elixir_ls/
+
+# Kiro spec/steering lives in a separate repo, not tracked here.
+.kiro/

@@ -1,0 +1,15 @@
+{application, wa_wasi, [
+  {description, "WASI preview1 host functions for the Erlang ecosystem"},
+  {vsn, "0.1.0"},
+  {modules, []},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {licenses, ["Unlicense"]},
+  {links, [{"GitHub", "https://github.com/couchemar/wa_wasi"}]},
+  %% UNLICENSE is not one of rebar3's default packaged paths; include it
+  %% explicitly so the license text ships in the tarball.
+  {include_paths, ["UNLICENSE"]},
+  %% The Elixir wrapper (wa_wasi_ex), the WAT fixtures, tests and editor
+  %% metadata live in the same repo but are not part of the Erlang package.
+  {exclude_paths, ["wa_wasi_ex", "test_data", ".kiro"]}
+]}.
