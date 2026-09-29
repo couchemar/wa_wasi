@@ -21,7 +21,7 @@
 -export([esuccess/0, ebadf/0, einval/0, efault/0]).
 
 %% Host functions (more are added in later tasks).
--export([fd_write/6]).
+-export([fd_write/6, args_sizes_get/4, environ_sizes_get/4, args_get/4, environ_get/4]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -187,3 +187,113 @@ collected(Fd) ->
         undefined -> <<>>;
         B when is_binary(B) -> B
     end.
+
+%% --------------------------------------------------------------------------
+%% args_sizes_get / environ_sizes_get (Req 5.1-5.2, 5.5, 5.6; 6.1-6.2, 6.5, 6.6)
+%%
+%% Both report two values into caller memory: the item count and the total byte
+%% size of the NUL-terminated item strings (sum over items of byte_size + 1).
+%% args items are the raw arg binaries; environ items are formatted `KEY=VALUE'.
+%% An empty list reports 0 / 0.
+%%
+%% Atomicity across two disjoint u32 pointers: probe both destination ranges
+%% (a bounded read) before writing either; if either probe is OOB, return
+%% EFAULT with memory unmodified (Req 5.6, 6.6).
+%% --------------------------------------------------------------------------
+-spec args_sizes_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                     integer(), integer()) -> integer().
+args_sizes_get(Accessor, Ctx, CountPtr, BufSizePtr) ->
+    sizes_get(Accessor, wa_wasi_ctx:args(Ctx), CountPtr, BufSizePtr).
+
+-spec environ_sizes_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                        integer(), integer()) -> integer().
+environ_sizes_get(Accessor, Ctx, CountPtr, BufSizePtr) ->
+    sizes_get(Accessor, env_items(Ctx), CountPtr, BufSizePtr).
+
+sizes_get(Accessor, Items, CountPtr, BufSizePtr) ->
+    Count = length(Items),
+    BufSize = lists:sum([byte_size(I) + 1 || I <- Items]),
+    %% Probe both 4-byte destinations before writing either (all-or-nothing).
+    case {probe(Accessor, CountPtr, 4), probe(Accessor, BufSizePtr, 4)} of
+        {ok, ok} ->
+            ok = wa_wasi_memory:write(Accessor, CountPtr, encode_u32(Count)),
+            ok = wa_wasi_memory:write(Accessor, BufSizePtr, encode_u32(BufSize)),
+            ?ESUCCESS;
+        _ ->
+            ?EFAULT
+    end.
+
+%% Environment entries formatted as `KEY=VALUE' binaries (Req 6.2/6.4).
+env_items(Ctx) ->
+    [<<K/binary, $=, V/binary>> || {K, V} <- wa_wasi_ctx:env(Ctx)].
+
+%% Confirm a destination range is writable by attempting a bounded read of the
+%% same range (reuses the accessor's own bounds check without needing to know
+%% the memory size). Returns `ok' | `{error, efault}'.
+probe(Accessor, Ptr, Len) ->
+    case wa_wasi_memory:read(Accessor, Ptr, Len) of
+        {ok, _} -> ok;
+        {error, efault} -> {error, efault}
+    end.
+
+%% --------------------------------------------------------------------------
+%% args_get / environ_get (Req 5.3-5.4, 5.5, 5.6; 6.3-6.4, 6.5, 6.6)
+%%
+%% Write two regions: the NUL-terminated string buffer (each item followed by a
+%% NUL) at `BufPtr', and the pointer array at `PtrArrayPtr' — one u32 per item
+%% giving the linear-memory address of that item's string (`BufPtr' + the
+%% item's running offset within the buffer). args items are the raw arg
+%% binaries; environ items are `KEY=VALUE'. Items are written in configuration
+%% order. An empty list writes nothing and succeeds.
+%%
+%% Atomicity across the two disjoint regions: probe both destination ranges
+%% before writing either; OOB in either -> EFAULT, memory unmodified
+%% (Req 5.6, 6.6).
+%% --------------------------------------------------------------------------
+-spec args_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+               integer(), integer()) -> integer().
+args_get(Accessor, Ctx, PtrArrayPtr, BufPtr) ->
+    get_items(Accessor, wa_wasi_ctx:args(Ctx), PtrArrayPtr, BufPtr).
+
+-spec environ_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                  integer(), integer()) -> integer().
+environ_get(Accessor, Ctx, PtrArrayPtr, BufPtr) ->
+    get_items(Accessor, env_items(Ctx), PtrArrayPtr, BufPtr).
+
+%% Empty list: nothing to write, success (the pointer array and buffer are both
+%% zero-length, Req 5.5/6.5).
+get_items(_Accessor, [], _PtrArrayPtr, _BufPtr) ->
+    ?ESUCCESS;
+get_items(Accessor, Items, PtrArrayPtr, BufPtr) ->
+    %% Build the NUL-terminated string buffer and the pointer array together,
+    %% tracking each item's running offset so pointer N = BufPtr + Offset_N.
+    {Buf, PtrArray} = build_get_regions(Items, BufPtr),
+    %% Probe both destinations before writing either (all-or-nothing).
+    case {probe(Accessor, PtrArrayPtr, byte_size(PtrArray)),
+          probe(Accessor, BufPtr, byte_size(Buf))} of
+        {ok, ok} ->
+            ok = wa_wasi_memory:write(Accessor, PtrArrayPtr, PtrArray),
+            ok = wa_wasi_memory:write(Accessor, BufPtr, Buf),
+            ?ESUCCESS;
+        _ ->
+            ?EFAULT
+    end.
+
+%% Returns {StringBuffer, PointerArray}. StringBuffer is each item followed by a
+%% NUL byte, concatenated in order. PointerArray is `4 * length(Items)' bytes,
+%% each a u32 = BufPtr + the item's byte offset within StringBuffer.
+build_get_regions(Items, BufPtr) ->
+    build_get_regions(Items, BufPtr, 0, <<>>, <<>>).
+
+build_get_regions([], _BufPtr, _Off, Buf, Ptrs) ->
+    {Buf, Ptrs};
+build_get_regions([Item | Rest], BufPtr, Off, Buf, Ptrs) ->
+    Ptr = encode_u32(BufPtr + Off),
+    Entry = <<Item/binary, 0>>,
+    build_get_regions(
+        Rest,
+        BufPtr,
+        Off + byte_size(Entry),
+        <<Buf/binary, Entry/binary>>,
+        <<Ptrs/binary, Ptr/binary>>
+    ).
