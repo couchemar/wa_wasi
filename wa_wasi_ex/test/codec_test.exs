@@ -45,7 +45,9 @@ defmodule WaWasi.CodecTest do
       # 1 -> low byte first, rest zero
       assert :wa_wasi_preview1.encode_u64(1) == <<1, 0, 0, 0, 0, 0, 0, 0>>
       # -1 -> all ones (two's complement)
-      assert :wa_wasi_preview1.encode_u64(-1) == <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>
+      assert :wa_wasi_preview1.encode_u64(-1) ==
+               <<0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF>>
+
       # 0x0102030405060708 -> bytes reversed
       assert :wa_wasi_preview1.encode_u64(0x0102030405060708) ==
                <<0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01>>

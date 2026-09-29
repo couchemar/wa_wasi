@@ -45,10 +45,17 @@ defmodule WaWasi.CtxTest do
     test "malformed fields raise {badarg, {wa_wasi_ctx, Field}}" do
       # erlang:error({badarg, _}) surfaces in Elixir as an ArgumentError whose
       # raised term is the tagged tuple; assert on the term for precision.
-      assert {:badarg, {:wa_wasi_ctx, :args}} = catch_error(:wa_wasi_ctx.new(%{args: [<<"ok">>, 123]}))
-      assert {:badarg, {:wa_wasi_ctx, :env}} = catch_error(:wa_wasi_ctx.new(%{env: [{<<"K">>, :notbin}]}))
+      assert {:badarg, {:wa_wasi_ctx, :args}} =
+               catch_error(:wa_wasi_ctx.new(%{args: [<<"ok">>, 123]}))
+
+      assert {:badarg, {:wa_wasi_ctx, :env}} =
+               catch_error(:wa_wasi_ctx.new(%{env: [{<<"K">>, :notbin}]}))
+
       assert {:badarg, {:wa_wasi_ctx, :sink}} = catch_error(:wa_wasi_ctx.new(%{stdout: :bogus}))
-      assert {:badarg, {:wa_wasi_ctx, :clock}} = catch_error(:wa_wasi_ctx.new(%{clock: {:fixed, 1}}))
+
+      assert {:badarg, {:wa_wasi_ctx, :clock}} =
+               catch_error(:wa_wasi_ctx.new(%{clock: {:fixed, 1}}))
+
       assert {:badarg, {:wa_wasi_ctx, :rng}} = catch_error(:wa_wasi_ctx.new(%{rng: 42}))
     end
   end

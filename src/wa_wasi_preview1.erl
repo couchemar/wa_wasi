@@ -22,6 +22,7 @@
 
 %% Host functions (more are added in later tasks).
 -export([fd_write/6, args_sizes_get/4, environ_sizes_get/4, args_get/4, environ_get/4]).
+-export([clock_time_get/5, random_get/4]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -297,3 +298,88 @@ build_get_regions([Item | Rest], BufPtr, Off, Buf, Ptrs) ->
         <<Buf/binary, Entry/binary>>,
         <<Ptrs/binary, Ptr/binary>>
     ).
+
+%% --------------------------------------------------------------------------
+%% clock_time_get (Req 7)
+%%
+%% Signature: (Accessor, Ctx, ClockId, Precision, TimePtr) -> Errno.
+%% ClockId 0 = realtime, 1 = monotonic; any other id -> EINVAL, write nothing
+%% (Req 7.4). `Precision' is accepted and ignored — the value comes only from
+%% the configured clock source (Req 3.4). Writes the nanosecond timestamp as an
+%% 8-byte little-endian signed i64 at `TimePtr'; OOB -> EFAULT, no bytes written
+%% (Req 7.5).
+%% --------------------------------------------------------------------------
+-spec clock_time_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                     integer(), integer(), integer()) -> integer().
+clock_time_get(Accessor, Ctx, ClockId, _Precision, TimePtr) ->
+    case clock_kind(ClockId) of
+        {error, einval} ->
+            ?EINVAL;
+        {ok, Kind} ->
+            case wa_wasi_ctx:require_clock(Ctx) of
+                {error, {missing_capability, _} = Reason} ->
+                    erlang:error(Reason);
+                {ok, Source} ->
+                    Ns = clock_ns(Source, Kind),
+                    case wa_wasi_memory:write(Accessor, TimePtr, encode_u64(Ns)) of
+                        ok -> ?ESUCCESS;
+                        {error, efault} -> ?EFAULT
+                    end
+            end
+    end.
+
+clock_kind(0) -> {ok, realtime};
+clock_kind(1) -> {ok, monotonic};
+clock_kind(_) -> {error, einval}.
+
+%% Obtain the nanosecond value for `Kind' from the configured clock source.
+clock_ns({'fun', F}, Kind) -> F(Kind);
+clock_ns({fixed, Rt, _Mono}, realtime) -> Rt;
+clock_ns({fixed, _Rt, Mono}, monotonic) -> Mono.
+
+%% --------------------------------------------------------------------------
+%% random_get (Req 8)
+%%
+%% Signature: (Accessor, Ctx, BufPtr, BufLen) -> Errno.
+%% BufLen == 0 -> no bytes written, ESUCCESS (Req 8.3). Otherwise obtain exactly
+%% BufLen bytes from the configured RNG source and write them at BufPtr; OOB ->
+%% EFAULT, no bytes written (Req 8.4). The RNG source supplies the bytes — the
+%% core never reads host randomness implicitly (Req 3.5).
+%%   {fun, F}     -> F(BufLen), asserted to be exactly BufLen bytes
+%%   {fixed, Bin} -> Bin cycled/truncated to BufLen deterministic bytes
+%%   crypto       -> crypto:strong_rand_bytes(BufLen)
+%% --------------------------------------------------------------------------
+-spec random_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                 integer(), integer()) -> integer().
+random_get(_Accessor, _Ctx, _BufPtr, 0) ->
+    ?ESUCCESS;
+random_get(Accessor, Ctx, BufPtr, BufLen) when BufLen > 0 ->
+    case wa_wasi_ctx:require_rng(Ctx) of
+        {error, {missing_capability, _} = Reason} ->
+            erlang:error(Reason);
+        {ok, Source} ->
+            Bytes = rng_bytes(Source, BufLen),
+            %% The source must produce exactly BufLen bytes (Req 8.2).
+            BufLen = byte_size(Bytes),
+            case wa_wasi_memory:write(Accessor, BufPtr, Bytes) of
+                ok -> ?ESUCCESS;
+                {error, efault} -> ?EFAULT
+            end
+    end.
+
+%% Produce exactly N bytes from an RNG source.
+rng_bytes({'fun', F}, N) ->
+    F(N);
+rng_bytes({fixed, Bin}, N) ->
+    fixed_bytes(Bin, N);
+rng_bytes(crypto, N) ->
+    crypto:strong_rand_bytes(N).
+
+%% Deterministic N bytes from a fixed seed: cycle the seed and truncate to N.
+%% An empty seed with N > 0 has no bytes to cycle — that is a caller error.
+fixed_bytes(_Bin, 0) ->
+    <<>>;
+fixed_bytes(Bin, N) when byte_size(Bin) > 0 ->
+    Reps = (N div byte_size(Bin)) + 1,
+    Full = binary:copy(Bin, Reps),
+    binary:part(Full, 0, N).
