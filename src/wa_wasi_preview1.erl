@@ -23,6 +23,7 @@
 %% Host functions (more are added in later tasks).
 -export([fd_write/6, args_sizes_get/4, environ_sizes_get/4, args_get/4, environ_get/4]).
 -export([clock_time_get/5, random_get/4]).
+-export([proc_exit/2]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -383,3 +384,15 @@ fixed_bytes(Bin, N) when byte_size(Bin) > 0 ->
     Reps = (N div byte_size(Bin)) + 1,
     Full = binary:copy(Bin, Reps),
     binary:part(Full, 0, N).
+
+%% --------------------------------------------------------------------------
+%% proc_exit (Req 9)
+%%
+%% Signature: (Ctx, Code) -> no_return(). Raises the catchable Erlang error
+%% `{wasi_exit, Code}' to unwind the running module without returning a value
+%% and WITHOUT terminating the BEAM — never `erlang:halt' (Req 9.2-9.4). `Code'
+%% is interpreted unsigned (masked to 32 bits, Req 9.1). The accessor is unused.
+%% --------------------------------------------------------------------------
+-spec proc_exit(wa_wasi_ctx:t(), integer()) -> no_return().
+proc_exit(_Ctx, Code) ->
+    erlang:error({wasi_exit, Code band 16#FFFFFFFF}).
