@@ -25,7 +25,7 @@
 -export([clock_time_get/5, random_get/4]).
 -export([proc_exit/2]).
 %% Non-filesystem preview1 completion.
--export([clock_res_get/4, sched_yield/1]).
+-export([clock_res_get/4, sched_yield/1, fd_fdstat_get/4]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -472,3 +472,55 @@ proc_exit(_Ctx, Code) ->
 -spec sched_yield(wa_wasi_ctx:t()) -> integer().
 sched_yield(_Ctx) ->
     ?ESUCCESS.
+
+%% --------------------------------------------------------------------------
+%% fd_fdstat_get (Req 6)
+%%
+%% Signature: (Accessor, Ctx, Fd, BufPtr) -> Errno. Writes a 24-byte `fdstat'
+%% struct for a KNOWN standard fd at `BufPtr':
+%%   fd 1 (stdout) / fd 2 (stderr) -> character_device, fdflags 0, rights
+%%     fd_write, inheriting 0 (Req 6.4).
+%%   fd 0 (stdin)  -> character_device, fdflags 0, rights fd_read, inheriting 0,
+%%     but ONLY when a Stdin_Source is configured; otherwise EBADF (Req 6.5/6.6).
+%%   any other fd  -> EBADF, write nothing (Req 6.7).
+%% The struct is built as one binary and written via write/3, whose accessor
+%% bounds-checks and never partially writes, so OOB -> EFAULT with memory
+%% unmodified (Req 6.8).
+%% --------------------------------------------------------------------------
+-spec fd_fdstat_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                    integer(), integer()) -> integer().
+fd_fdstat_get(Accessor, Ctx, Fd, BufPtr) ->
+    case fdstat_for(Ctx, Fd) of
+        {error, ebadf} ->
+            ?EBADF;
+        {ok, Struct} ->
+            case wa_wasi_memory:write(Accessor, BufPtr, Struct) of
+                ok -> ?ESUCCESS;
+                {error, efault} -> ?EFAULT
+            end
+    end.
+
+%% Resolve a standard fd to its fdstat struct binary, or {error, ebadf}.
+fdstat_for(_Ctx, 1) ->
+    {ok, fdstat_bytes(?FILETYPE_CHARACTER_DEVICE, ?FDFLAGS_NONE, ?RIGHTS_FD_WRITE, ?RIGHTS_NONE)};
+fdstat_for(_Ctx, 2) ->
+    {ok, fdstat_bytes(?FILETYPE_CHARACTER_DEVICE, ?FDFLAGS_NONE, ?RIGHTS_FD_WRITE, ?RIGHTS_NONE)};
+fdstat_for(Ctx, 0) ->
+    case wa_wasi_ctx:require_stdin(Ctx) of
+        {ok, _Source} ->
+            {ok, fdstat_bytes(?FILETYPE_CHARACTER_DEVICE, ?FDFLAGS_NONE, ?RIGHTS_FD_READ, ?RIGHTS_NONE)};
+        {error, {missing_capability, _}} ->
+            {error, ebadf}
+    end;
+fdstat_for(_Ctx, _Fd) ->
+    {error, ebadf}.
+
+%% Build the 24-byte, 8-byte-aligned `fdstat' struct as one binary:
+%%   filetype u8 @0, pad @1, fdflags u16 LE @2, pad @4..7,
+%%   fs_rights_base u64 LE @8, fs_rights_inheriting u64 LE @16.
+fdstat_bytes(Filetype, Fdflags, RightsBase, RightsInheriting) ->
+    Struct =
+        <<Filetype:8, 0:8, (encode_u16(Fdflags))/binary, 0:32,
+          (encode_u64(RightsBase))/binary, (encode_u64(RightsInheriting))/binary>>,
+    ?FDSTAT_SIZE = byte_size(Struct),
+    Struct.
