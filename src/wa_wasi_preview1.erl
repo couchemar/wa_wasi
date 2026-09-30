@@ -25,7 +25,7 @@
 -export([clock_time_get/5, random_get/4]).
 -export([proc_exit/2]).
 %% Non-filesystem preview1 completion.
--export([clock_res_get/4]).
+-export([clock_res_get/4, sched_yield/1]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -460,3 +460,15 @@ fixed_bytes(Bin, N) when byte_size(Bin) > 0 ->
 -spec proc_exit(wa_wasi_ctx:t(), integer()) -> no_return().
 proc_exit(_Ctx, Code) ->
     erlang:error({wasi_exit, Code band 16#FFFFFFFF}).
+
+%% --------------------------------------------------------------------------
+%% sched_yield (Req 5)
+%%
+%% Signature: (Ctx) -> Errno. A no-op scheduler yield: always returns ESUCCESS,
+%% touches no linear memory, and requires no Config_Context capability. The
+%% `Ctx' argument is accepted for a uniform call site (mirroring proc_exit) and
+%% ignored.
+%% --------------------------------------------------------------------------
+-spec sched_yield(wa_wasi_ctx:t()) -> integer().
+sched_yield(_Ctx) ->
+    ?ESUCCESS.
