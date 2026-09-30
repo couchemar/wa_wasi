@@ -24,6 +24,8 @@
 -export([fd_write/6, args_sizes_get/4, environ_sizes_get/4, args_get/4, environ_get/4]).
 -export([clock_time_get/5, random_get/4]).
 -export([proc_exit/2]).
+%% Non-filesystem preview1 completion.
+-export([clock_res_get/4]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -363,6 +365,42 @@ clock_kind(_) -> {error, einval}.
 clock_ns({'fun', F}, Kind) -> F(Kind);
 clock_ns({fixed, Rt, _Mono}, realtime) -> Rt;
 clock_ns({fixed, _Rt, Mono}, monotonic) -> Mono.
+
+%% --------------------------------------------------------------------------
+%% clock_res_get (Req 4)
+%%
+%% Signature: (Accessor, Ctx, ClockId, ResPtr) -> Errno.
+%% ClockId 0 = realtime, 1 = monotonic; any other id (incl. 2 process_cputime_id
+%% and 3 thread_cputime_id) -> EINVAL, write nothing (Req 4.4). Writes the
+%% configured clock RESOLUTION in nanoseconds as an 8-byte little-endian u64 at
+%% `ResPtr'; OOB -> EFAULT, no bytes written (Req 4.5). The resolution comes only
+%% from the Clock_Resolution_Source in the context; an absent source raises
+%% {missing_capability, clock_res} (Req 4.6, no host fallback) — mirroring
+%% clock_time_get, since WASI has no errno for an unwired clock.
+%% --------------------------------------------------------------------------
+-spec clock_res_get(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+                    integer(), integer()) -> integer().
+clock_res_get(Accessor, Ctx, ClockId, ResPtr) ->
+    case clock_kind(ClockId) of
+        {error, einval} ->
+            ?EINVAL;
+        {ok, Kind} ->
+            case wa_wasi_ctx:require_clock_res(Ctx) of
+                {error, {missing_capability, _} = Reason} ->
+                    erlang:error(Reason);
+                {ok, Source} ->
+                    Res = clock_res_ns(Source, Kind),
+                    case wa_wasi_memory:write(Accessor, ResPtr, encode_u64(Res)) of
+                        ok -> ?ESUCCESS;
+                        {error, efault} -> ?EFAULT
+                    end
+            end
+    end.
+
+%% Obtain the resolution (ns) for `Kind' from the configured resolution source.
+clock_res_ns({'fun', F}, Kind) -> F(Kind);
+clock_res_ns({fixed, Rt, _Mono}, realtime) -> Rt;
+clock_res_ns({fixed, _Rt, Mono}, monotonic) -> Mono.
 
 %% --------------------------------------------------------------------------
 %% random_get (Req 8)
