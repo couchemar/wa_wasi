@@ -31,6 +31,30 @@ defmodule WaWasi.CodecTest do
     end
   end
 
+  # Feature: preview1-nonfs-completion, Property 1: u16 codec little-endian
+  # ordering. Validates: Requirements 1.3.
+  describe "encode_u16/1 (u16, little-endian)" do
+    test "round-trips representative u16 values via a 2-byte LE decode" do
+      for u <- [0, 1, 0x00FF, 0xFF00, 0xFFFF] do
+        bytes = :wa_wasi_preview1.encode_u16(u)
+        assert byte_size(bytes) == 2
+        <<decoded::16-little-unsigned>> = bytes
+        assert decoded == u
+      end
+    end
+
+    test "least-significant byte is at the lowest offset (little-endian)" do
+      # 1 -> low byte first
+      assert :wa_wasi_preview1.encode_u16(1) == <<1, 0>>
+      # 0x00FF -> low byte 0xFF then 0x00
+      assert :wa_wasi_preview1.encode_u16(0x00FF) == <<0xFF, 0x00>>
+      # 0xFF00 -> low byte 0x00 then 0xFF
+      assert :wa_wasi_preview1.encode_u16(0xFF00) == <<0x00, 0xFF>>
+      # max -> all ones
+      assert :wa_wasi_preview1.encode_u16(0xFFFF) == <<0xFF, 0xFF>>
+    end
+  end
+
   describe "encode_u64/1 (signed i64, little-endian)" do
     test "round-trips representative signed i64 values via an 8-byte LE decode" do
       for n <- [0, 1, -1, 42, -42, @i64_min, @i64_max] do

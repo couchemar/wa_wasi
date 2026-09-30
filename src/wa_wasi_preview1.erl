@@ -14,7 +14,7 @@
 -module(wa_wasi_preview1).
 
 %% Pure codec helpers (shared by every host function).
--export([encode_u32/1, decode_u32/1, encode_u64/1, decode_iovecs/1]).
+-export([encode_u32/1, decode_u32/1, encode_u64/1, encode_u16/1, decode_iovecs/1]).
 
 %% Errno constants exported as 0-arity functions so callers/tests can name them
 %% without duplicating the literals. The macros below are used internally.
@@ -39,6 +39,26 @@
 -define(EINVAL, 28).
 -define(EFAULT, 21).
 
+%% --------------------------------------------------------------------------
+%% Fdstat / Rights / Filetype constants (WASI preview1). These are struct field
+%% values, NOT errnos — no new errno constant is introduced. Used by
+%% fd_fdstat_get (added in a later task) so no bare integer literals appear in
+%% the function bodies.
+%% --------------------------------------------------------------------------
+%% `filetype' code reported for the standard fds (stdin/stdout/stderr).
+-define(FILETYPE_CHARACTER_DEVICE, 2).
+
+%% `fdflags' u16 bitfield value reported for the standard fds (no flags set).
+-define(FDFLAGS_NONE, 0).
+
+%% `rights' u64 bitfield bits: fd_read is bit 1, fd_write is bit 6.
+-define(RIGHTS_FD_READ, (1 bsl 1)).
+-define(RIGHTS_FD_WRITE, (1 bsl 6)).
+-define(RIGHTS_NONE, 0).
+
+%% The `fdstat' struct is 24 bytes, 8-byte aligned.
+-define(FDSTAT_SIZE, 24).
+
 -spec esuccess() -> 0.
 esuccess() -> ?ESUCCESS.
 
@@ -62,6 +82,12 @@ efault() -> ?EFAULT.
 -spec encode_u32(0..4294967295) -> binary().
 encode_u32(V) when is_integer(V), V >= 0, V =< 16#FFFFFFFF ->
     <<V:32/little-unsigned>>.
+
+%% Encode a 16-bit unsigned integer as 2 little-endian bytes. Used for the
+%% `fdflags' field of the fdstat struct written by fd_fdstat_get.
+-spec encode_u16(0..65535) -> binary().
+encode_u16(V) when is_integer(V), V >= 0, V =< 16#FFFF ->
+    <<V:16/little-unsigned>>.
 
 %% Decode 4 little-endian bytes as a 32-bit unsigned integer.
 -spec decode_u32(binary()) -> 0..4294967295.
