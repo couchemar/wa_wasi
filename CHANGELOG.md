@@ -10,6 +10,8 @@ Elixir wrapper `wa_wasi_ex`, which are versioned together.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-30
+
 ### Added
 
 - Initial release: WASI preview1 host functions (the `wasi_snapshot_preview1`
@@ -36,3 +38,4 @@ Elixir wrapper `wa_wasi_ex`, which are versioned together.
   `EFAULT`, leaving memory unmodified.
 
 [Unreleased]: https://github.com/couchemar/wa_wasi
+[0.1.0]: https://github.com/couchemar/wa_wasi

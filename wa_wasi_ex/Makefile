@@ -16,11 +16,14 @@ export WA_WASI_PATH ?= ..
 
 .DEFAULT_GOAL := help
 
-.PHONY: help deps compile test format package publish clean
+.PHONY: help deps refresh compile test format package publish clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+refresh: ## Drop a stale local-core copy (only relevant under WA_WASI_PATH)
+	rm -rf deps/wa_wasi _build/*/lib/wa_wasi
 
 deps: ## Fetch deps (dev: sibling core via WA_WASI_PATH)
 	mix deps.get
@@ -36,12 +39,15 @@ format: ## Check Elixir formatting
 
 # Packaging/publish must NOT use the dev path dep: unset WA_WASI_PATH so the
 # {:wa_wasi, "~> 0.1"} hex dep is used. This requires the core to already be
-# published on hex (otherwise deps.get for the wrapper fails).
-package: ## Build the hex tarball with the hex core dep (WA_WASI_PATH unset)
+# published on hex (otherwise deps.get for the wrapper fails). Both targets
+# `refresh` first to drop any stale copied path-dep from prior WA_WASI_PATH dev,
+# so the tarball resolves against the hex core cleanly.
+package: refresh ## Build the hex tarball with the hex core dep (WA_WASI_PATH unset)
 	@echo ">> building package with WA_WASI_PATH unset (uses {:wa_wasi, \"~> 0.1\"})"
+	env -u WA_WASI_PATH mix deps.get
 	env -u WA_WASI_PATH mix hex.build
 
-publish: ## Publish the wrapper to hex; run AFTER the core is published
+publish: refresh ## Publish the wrapper to hex; run AFTER the core is published
 	@echo ">> publishing wa_wasi_ex. The core wa_wasi must already be on hex."
 	env -u WA_WASI_PATH mix deps.get
 	env -u WA_WASI_PATH mix hex.publish
