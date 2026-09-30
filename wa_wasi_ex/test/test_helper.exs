@@ -29,8 +29,11 @@ cond do
       case System.cmd("cmake", ["-S", fixture_dir, "-B", build_dir, "-G", "Ninja"],
              stderr_to_stdout: true
            ) do
-        {_, 0} -> :ok
-        {output, code} -> raise "cmake configure failed for test fixtures (exit #{code}):\n#{output}"
+        {_, 0} ->
+          :ok
+
+        {output, code} ->
+          raise "cmake configure failed for test fixtures (exit #{code}):\n#{output}"
       end
     end
 

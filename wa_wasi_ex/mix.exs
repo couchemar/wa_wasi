@@ -49,7 +49,7 @@ defmodule WaWasiEx.MixProject do
 
     [
       core,
-      {:wa_embedder_ex, "~> 0.1", only: :test},
+      {:wa_embedder_ex, "~> 0.2", only: :test},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
