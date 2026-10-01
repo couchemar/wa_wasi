@@ -115,6 +115,80 @@ defmodule WaWasiTest do
     assert Process.alive?(self())
   end
 
+  # -- Task 8.2 (Property 10): import-map arity and coverage ------------------
+  # Verify the four new import-map entries are present with the exact WASM arity
+  # (2/0/2/4) AND that invoking each closure dispatches to the corresponding
+  # wa_wasi_preview1 host function with the captured Accessor/Ctx — observed via
+  # a fixed-source side effect / return value. Req 8.1-8.3.
+  describe "wa_wasi:imports/2 import-map coverage (Property 10)" do
+    # A binary-backed Memory_Accessor for the pure layer (no wa_embedder).
+    defp probe_mem(size) do
+      handle = WaWasi.TestMemory.new(size)
+      {{WaWasi.TestMemory, handle}, handle}
+    end
+
+    defp preview1_ns(acc, ctx) do
+      imports = WaWasi.imports(acc, ctx)
+      Map.fetch!(imports, <<"wasi_snapshot_preview1">>)
+    end
+
+    test "clock_res_get: arity 2 and dispatches, writing the configured resolution" do
+      ctx = WaWasi.context(%{clock_res: {:fixed, 1000, 25}})
+      {acc, handle} = probe_mem(8)
+      ns = preview1_ns(acc, ctx)
+      fun = Map.fetch!(ns, <<"clock_res_get">>)
+
+      assert is_function(fun, 2)
+      # id 0 (realtime) -> write the configured 1000 ns resolution at offset 0
+      assert fun.(0, 0) == @esuccess
+      assert WaWasi.TestMemory.dump(handle) == <<1000::64-little>>
+    end
+
+    test "sched_yield: arity 0 and dispatches to a pure success" do
+      ctx = WaWasi.context(%{})
+      {acc, _handle} = probe_mem(8)
+      ns = preview1_ns(acc, ctx)
+      fun = Map.fetch!(ns, <<"sched_yield">>)
+
+      assert is_function(fun, 0)
+      assert fun.() == @esuccess
+    end
+
+    test "fd_fdstat_get: arity 2 and dispatches, writing the fd 1 fdstat struct" do
+      ctx = WaWasi.context(%{})
+      {acc, handle} = probe_mem(24)
+      ns = preview1_ns(acc, ctx)
+      fun = Map.fetch!(ns, <<"fd_fdstat_get">>)
+
+      assert is_function(fun, 2)
+      # fd 1 (stdout) -> a 24-byte fdstat struct written at offset 0
+      assert fun.(1, 0) == @esuccess
+      struct = WaWasi.TestMemory.dump(handle)
+      assert byte_size(struct) == 24
+      # filetype byte 0 = character_device (2)
+      assert binary_part(struct, 0, 1) == <<2>>
+    end
+
+    test "fd_read: arity 4 and dispatches, filling from the configured stdin" do
+      ctx = WaWasi.context(%{stdin: {:fixed, <<"hi">>}})
+      # layout: iovec array at 0 ({ptr=16, len=2}), nread slot at 8, buffer at 16
+      {acc, handle} = probe_mem(32)
+      {WaWasi.TestMemory, h} = acc
+      :ok = WaWasi.TestMemory.write_bytes(h, 0, <<16::32-little, 2::32-little>>)
+      ns = preview1_ns(acc, ctx)
+      fun = Map.fetch!(ns, <<"fd_read">>)
+
+      assert is_function(fun, 4)
+      # fd 0, iovs at 0, 1 iovec, nread at 8
+      assert fun.(0, 0, 1, 8) == @esuccess
+      mem = WaWasi.TestMemory.dump(handle)
+      # the two stdin bytes landed in the buffer at offset 16
+      assert binary_part(mem, 16, 2) == <<"hi">>
+      # nread slot holds 2
+      assert binary_part(mem, 8, 4) == <<2::32-little>>
+    end
+  end
+
   # -- Task 14.3: wrapper passthrough -------------------------------------
   # WaWasi's public functions delegate to their :wa_wasi* Erlang counterparts,
   # and only plain terms cross the boundary (no Elixir structs). Req 11.3, 11.6.

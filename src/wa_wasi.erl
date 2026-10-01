@@ -27,7 +27,11 @@
     environ_get_fun/2,
     clock_time_get_fun/2,
     random_get_fun/2,
-    proc_exit_fun/2
+    proc_exit_fun/2,
+    clock_res_get_fun/2,
+    sched_yield_fun/2,
+    fd_fdstat_get_fun/2,
+    fd_read_fun/2
 ]).
 
 %% The WASM import module name WASI preview1 functions are published under.
@@ -48,7 +52,11 @@ imports(Accessor, Ctx) ->
             <<"environ_get">> => environ_get_fun(Accessor, Ctx),
             <<"clock_time_get">> => clock_time_get_fun(Accessor, Ctx),
             <<"random_get">> => random_get_fun(Accessor, Ctx),
-            <<"proc_exit">> => proc_exit_fun(Accessor, Ctx)
+            <<"proc_exit">> => proc_exit_fun(Accessor, Ctx),
+            <<"clock_res_get">> => clock_res_get_fun(Accessor, Ctx),
+            <<"sched_yield">> => sched_yield_fun(Accessor, Ctx),
+            <<"fd_fdstat_get">> => fd_fdstat_get_fun(Accessor, Ctx),
+            <<"fd_read">> => fd_read_fun(Accessor, Ctx)
         }
     }.
 
@@ -113,4 +121,37 @@ random_get_fun(Accessor, Ctx) ->
 proc_exit_fun(_Accessor, Ctx) ->
     fun(Code) ->
         wa_wasi_preview1:proc_exit(Ctx, Code)
+    end.
+
+%% clock_res_get captures Accessor + Ctx and exposes WASM arity 2.
+-spec clock_res_get_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun((integer(), integer()) -> integer()).
+clock_res_get_fun(Accessor, Ctx) ->
+    fun(ClockId, ResPtr) ->
+        wa_wasi_preview1:clock_res_get(Accessor, Ctx, ClockId, ResPtr)
+    end.
+
+%% sched_yield ignores the accessor (it touches no memory); the builder keeps the
+%% uniform (Accessor, Ctx) shape for a consistent call site.
+-spec sched_yield_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun(() -> integer()).
+sched_yield_fun(_Accessor, Ctx) ->
+    fun() ->
+        wa_wasi_preview1:sched_yield(Ctx)
+    end.
+
+%% fd_fdstat_get captures Accessor + Ctx and exposes WASM arity 2.
+-spec fd_fdstat_get_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun((integer(), integer()) -> integer()).
+fd_fdstat_get_fun(Accessor, Ctx) ->
+    fun(Fd, BufPtr) ->
+        wa_wasi_preview1:fd_fdstat_get(Accessor, Ctx, Fd, BufPtr)
+    end.
+
+%% fd_read captures Accessor + Ctx and exposes WASM arity 4.
+-spec fd_read_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun((integer(), integer(), integer(), integer()) -> integer()).
+fd_read_fun(Accessor, Ctx) ->
+    fun(Fd, IovsPtr, IovsLen, NreadPtr) ->
+        wa_wasi_preview1:fd_read(Accessor, Ctx, Fd, IovsPtr, IovsLen, NreadPtr)
     end.
