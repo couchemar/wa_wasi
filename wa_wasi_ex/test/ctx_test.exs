@@ -117,6 +117,7 @@ defmodule WaWasi.CtxTest do
   describe "require_clock_res/1 and require_stdin/1 (Req 2.6, 3.6)" do
     test "absent clock_res/stdin reject with a missing-capability error (no host fallback)" do
       ctx = :wa_wasi_ctx.new(%{})
+
       assert :wa_wasi_ctx.require_clock_res(ctx) ==
                {:error, {:missing_capability, :clock_res}}
 

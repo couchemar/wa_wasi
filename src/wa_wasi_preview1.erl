@@ -25,7 +25,7 @@
 -export([clock_time_get/5, random_get/4]).
 -export([proc_exit/2]).
 %% Non-filesystem preview1 completion.
--export([clock_res_get/4, sched_yield/1, fd_fdstat_get/4]).
+-export([clock_res_get/4, sched_yield/1, fd_fdstat_get/4, fd_read/6]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
@@ -524,3 +524,129 @@ fdstat_bytes(Filetype, Fdflags, RightsBase, RightsInheriting) ->
           (encode_u64(RightsBase))/binary, (encode_u64(RightsInheriting))/binary>>,
     ?FDSTAT_SIZE = byte_size(Struct),
     Struct.
+
+%% --------------------------------------------------------------------------
+%% fd_read (Req 7)
+%%
+%% Signature: (Accessor, Ctx, Fd, IovsPtr, IovsLen, NreadPtr) -> Errno. The read
+%% counterpart of fd_write: reads from the configured Stdin_Source (fd 0 only)
+%% into the iovec buffers in ascending index order until the source is exhausted
+%% or every buffer is full, then writes the total bytes read as a u32 at
+%% NreadPtr.
+%%   Fd /= 0                    -> EBADF, Nread untouched (Req 7.7)
+%%   fd 0, no Stdin_Source      -> EBADF, Nread untouched (Req 7.8)
+%%   IovsLen == 0               -> write Nread 0, ESUCCESS, no stdin consumed (7.5)
+%%   at/after EOF               -> write Nread 0, ESUCCESS (Req 7.6)
+%% Atomicity (Req 7.9): the iovec array and every buffer destination plus the
+%% Nread slot are bounds-checked (read/probe) BEFORE any Stdin_Source byte is
+%% pulled, so an OOB returns EFAULT with memory unmodified and no input consumed.
+%% --------------------------------------------------------------------------
+-spec fd_read(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+              integer(), integer(), integer(), integer()) -> integer().
+fd_read(_Accessor, _Ctx, Fd, _IovsPtr, _IovsLen, _NreadPtr) when Fd =/= 0 ->
+    ?EBADF;
+fd_read(Accessor, Ctx, 0, IovsPtr, IovsLen, NreadPtr) ->
+    case wa_wasi_ctx:require_stdin(Ctx) of
+        {error, {missing_capability, _}} ->
+            %% fd 0 with no stdin source: an unreadable descriptor (Req 7.8).
+            ?EBADF;
+        {ok, Source} ->
+            fd_read_1(Accessor, Source, IovsPtr, IovsLen, NreadPtr)
+    end.
+
+%% IovsLen == 0: write 0 to Nread, consume no stdin (Req 7.5).
+fd_read_1(Accessor, _Source, _IovsPtr, 0, NreadPtr) ->
+    case wa_wasi_memory:write(Accessor, NreadPtr, encode_u32(0)) of
+        ok -> ?ESUCCESS;
+        {error, efault} -> ?EFAULT
+    end;
+fd_read_1(Accessor, Source, IovsPtr, IovsLen, NreadPtr) ->
+    %% (a) read the iovec array (IovsLen * 8 bytes)
+    case wa_wasi_memory:read(Accessor, IovsPtr, IovsLen * 8) of
+        {error, efault} ->
+            ?EFAULT;
+        {ok, IovBin} ->
+            Iovecs = decode_iovecs(IovBin),
+            %% (b) bounds-check every buffer and the Nread slot BEFORE pulling
+            %% any stdin bytes, so an OOB consumes no input (Req 7.9).
+            case probe_all(Accessor, [{NreadPtr, 4} | Iovecs]) of
+                {error, efault} ->
+                    ?EFAULT;
+                ok ->
+                    %% (c) fill buffers in ascending order from the source
+                    {Writes, N} = fill_buffers(Iovecs, Source),
+                    %% (d) issue the pre-probed writes, then the Nread count
+                    ok = write_all(Accessor, Writes),
+                    ok = wa_wasi_memory:write(Accessor, NreadPtr, encode_u32(N)),
+                    ?ESUCCESS
+            end
+    end.
+
+%% Probe a list of {Ptr, Len} ranges; ok only if all are in bounds.
+probe_all(_Accessor, []) ->
+    ok;
+probe_all(Accessor, [{Ptr, Len} | Rest]) ->
+    case probe(Accessor, Ptr, Len) of
+        ok -> probe_all(Accessor, Rest);
+        {error, efault} = E -> E
+    end.
+
+%% Fill iovec buffers in ascending index order from the Stdin_Source, returning
+%% the list of {Ptr, Chunk} writes (only nonempty chunks) and the total byte
+%% count. Stops when the source reports EOF (<<>>), or every buffer is full.
+fill_buffers(Iovecs, Source) ->
+    fill_buffers(Iovecs, Source, [], 0).
+
+fill_buffers([], _Source, Writes, N) ->
+    {lists:reverse(Writes), N};
+fill_buffers([{_Ptr, 0} | Rest], Source, Writes, N) ->
+    %% zero-length buffer: nothing to fill, skip
+    fill_buffers(Rest, Source, Writes, N);
+fill_buffers([{Ptr, Len} | Rest], Source, Writes, N) ->
+    case stdin_pull(Source, Len) of
+        {<<>>, _Next} ->
+            %% EOF: stop; remaining buffers get nothing (Req 7.6)
+            {lists:reverse(Writes), N};
+        {Chunk, Next} ->
+            Got = byte_size(Chunk),
+            Writes1 = [{Ptr, Chunk} | Writes],
+            case Got < Len of
+                true ->
+                    %% source yielded less than this buffer's capacity: treat as
+                    %% the source being drained for this call; stop here.
+                    {lists:reverse(Writes1), N + Got};
+                false ->
+                    %% buffer filled exactly; continue with the next buffer
+                    fill_buffers(Rest, Next, Writes1, N + Got)
+            end
+    end.
+
+%% Pull up to Max bytes from a Stdin_Source, returning {Bytes, NextSource}.
+%%   {fixed, Bin} — a one-shot source: yield up to Max bytes, the remainder
+%%                  becomes the next source; an empty source yields <<>> (EOF).
+%%   {fun, F}     — F(Max) -> {Bytes, NextSource}; <<>> signals EOF. A chunk
+%%                  longer than Max is truncated so we never overfill a buffer.
+stdin_pull({fixed, Bin}, Max) ->
+    Take = min(Max, byte_size(Bin)),
+    Chunk = binary:part(Bin, 0, Take),
+    Rest = binary:part(Bin, Take, byte_size(Bin) - Take),
+    {Chunk, {fixed, Rest}};
+stdin_pull({'fun', F} = Source, Max) ->
+    case F(Max) of
+        {Chunk, Next} when is_binary(Chunk) ->
+            case byte_size(Chunk) > Max of
+                true -> {binary:part(Chunk, 0, Max), Next};
+                false -> {Chunk, Next}
+            end;
+        %% A misbehaving source that returns just bytes keeps the same source
+        %% (defensive; the validated shape is {Bytes, Next}).
+        Chunk when is_binary(Chunk) ->
+            {Chunk, Source}
+    end.
+
+%% Issue a list of {Ptr, Bytes} writes; all destinations were pre-probed.
+write_all(_Accessor, []) ->
+    ok;
+write_all(Accessor, [{Ptr, Bytes} | Rest]) ->
+    ok = wa_wasi_memory:write(Accessor, Ptr, Bytes),
+    write_all(Accessor, Rest).
