@@ -116,6 +116,72 @@ defmodule WaWasiTest do
     assert Process.alive?(self())
   end
 
+  # -- Task 10.1: clock_res_get + sched_yield end-to-end ----------------------
+
+  test "clock_res_get writes the configured fixed clock resolutions" do
+    # fixed realtime resolution = 1000 ns, monotonic = 1 ns
+    ctx = :wa_wasi_ctx.new(%{clock_res: {:fixed, 1000, 1}})
+    mod = compile!("07_clock_res", ctx)
+
+    assert call(mod, "realtime", []) == @esuccess
+    assert call(mod, "read64", [0]) == 1000
+
+    assert call(mod, "monotonic", []) == @esuccess
+    assert call(mod, "read64", [8]) == 1
+  end
+
+  test "sched_yield returns ESUCCESS" do
+    ctx = :wa_wasi_ctx.new(%{})
+    mod = compile!("08_sched_yield", ctx)
+
+    assert call(mod, "run", []) == @esuccess
+  end
+
+  # -- Task 10.2: fd_fdstat_get + fd_read end-to-end --------------------------
+
+  test "fd_fdstat_get writes the fdstat struct for fd 1 and fd 0" do
+    # stdin configured so fd 0 resolves to a readable character device
+    ctx = :wa_wasi_ctx.new(%{stdin: {:fixed, <<"x">>}})
+    mod = compile!("09_fd_fdstat_get", ctx)
+
+    # fd 1 (stdout) struct at offset 0
+    assert call(mod, "stdout", []) == @esuccess
+    # fs_filetype @0 = character_device (2)
+    assert call(mod, "read8", [0]) == 2
+    # padding byte @1 = 0
+    assert call(mod, "read8", [1]) == 0
+    # fs_flags @2 = 0
+    assert call(mod, "read16", [2]) == 0
+    # fs_rights_base @8 = fd_write right (bit 6 = 64)
+    assert call(mod, "read64", [8]) == 64
+    # fs_rights_inheriting @16 = 0
+    assert call(mod, "read64", [16]) == 0
+
+    # fd 0 (stdin) struct at offset 32
+    assert call(mod, "stdin", []) == @esuccess
+    assert call(mod, "read8", [32]) == 2
+    assert call(mod, "read16", [34]) == 0
+    # fs_rights_base = fd_read right (bit 1 = 2)
+    assert call(mod, "read64", [40]) == 2
+    assert call(mod, "read64", [48]) == 0
+  end
+
+  test "fd_read fills the iovec buffers from the configured stdin and writes nread" do
+    # 6 bytes into two 4-byte buffers: buf0 gets "ABCD", buf1 gets "EF"
+    ctx = :wa_wasi_ctx.new(%{stdin: {:fixed, <<"ABCDEF">>}})
+    mod = compile!("10_fd_read", ctx)
+
+    assert call(mod, "run", []) == @esuccess
+    # total bytes read
+    assert call(mod, "nread", []) == 6
+    # buffer 0 at offset 32: "ABCD"
+    buf0 = for i <- 0..3, do: call(mod, "read8", [32 + i])
+    assert buf0 == [?A, ?B, ?C, ?D]
+    # buffer 1 at offset 40: "EF" then the two untouched bytes stay 0
+    buf1 = for i <- 0..3, do: call(mod, "read8", [40 + i])
+    assert buf1 == [?E, ?F, 0, 0]
+  end
+
   # -- Task 8.2 (Property 10): import-map arity and coverage ------------------
   # Verify the four new import-map entries are present with the exact WASM arity
   # (2/0/2/4) AND that invoking each closure dispatches to the corresponding
