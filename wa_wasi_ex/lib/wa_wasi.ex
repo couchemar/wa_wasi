@@ -39,8 +39,9 @@ defmodule WaWasi do
   Construct a capabilities/configuration context from a plain options map.
 
   Recognized keys: `:stdout`, `:stderr` (a sink), `:args` (list of binaries),
-  `:env` (list of `{key, value}` binaries), `:clock`, `:rng`. Missing sinks/
-  clock/rng default to absent; `:args`/`:env` default to `[]`.
+  `:env` (list of `{key, value}` binaries), `:clock`, `:rng`, `:stdin`,
+  `:clock_res`. Missing sinks/clock/rng/stdin/clock_res default to absent;
+  `:args`/`:env` default to `[]`.
   """
   @spec context(map()) :: ctx()
   def context(opts) when is_map(opts), do: :wa_wasi_ctx.new(opts)
@@ -95,4 +96,26 @@ defmodule WaWasi do
   """
   @spec proc_exit(ctx(), integer()) :: no_return()
   def proc_exit(ctx, code), do: :wa_wasi_preview1.proc_exit(ctx, code)
+
+  @doc "See `:wa_wasi_preview1.clock_res_get/4`."
+  @spec clock_res_get(accessor(), ctx(), integer(), integer()) :: integer()
+  def clock_res_get(accessor, ctx, clock_id, res_ptr) do
+    :wa_wasi_preview1.clock_res_get(accessor, ctx, clock_id, res_ptr)
+  end
+
+  @doc "See `:wa_wasi_preview1.sched_yield/1`."
+  @spec sched_yield(ctx()) :: integer()
+  def sched_yield(ctx), do: :wa_wasi_preview1.sched_yield(ctx)
+
+  @doc "See `:wa_wasi_preview1.fd_fdstat_get/4`."
+  @spec fd_fdstat_get(accessor(), ctx(), integer(), integer()) :: integer()
+  def fd_fdstat_get(accessor, ctx, fd, buf_ptr) do
+    :wa_wasi_preview1.fd_fdstat_get(accessor, ctx, fd, buf_ptr)
+  end
+
+  @doc "See `:wa_wasi_preview1.fd_read/6`."
+  @spec fd_read(accessor(), ctx(), integer(), integer(), integer(), integer()) :: integer()
+  def fd_read(accessor, ctx, fd, iovs_ptr, iovs_len, nread_ptr) do
+    :wa_wasi_preview1.fd_read(accessor, ctx, fd, iovs_ptr, iovs_len, nread_ptr)
+  end
 end

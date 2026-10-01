@@ -11,6 +11,7 @@ defmodule WaWasiTest do
   # table, and the linear memory lives in the process dictionary.
 
   alias WaWasi.EmbedderMemoryAdapter, as: Adapter
+  alias WaWasi.TestMemory, as: TestMemory
 
   @wat_dir Path.expand("../../test_data/wat", __DIR__)
   @esuccess :wa_wasi_preview1.esuccess()
@@ -189,7 +190,7 @@ defmodule WaWasiTest do
     end
   end
 
-  # -- Task 14.3: wrapper passthrough -------------------------------------
+  # -- Task 9.2: wrapper passthrough (new functions + context keys) -------
   # WaWasi's public functions delegate to their :wa_wasi* Erlang counterparts,
   # and only plain terms cross the boundary (no Elixir structs). Req 11.3, 11.6.
   describe "WaWasi wrapper passthrough" do
@@ -199,6 +200,32 @@ defmodule WaWasiTest do
       # a plain Erlang record tuple, not an Elixir struct
       refute is_struct(WaWasi.context(opts))
       assert is_tuple(WaWasi.context(opts))
+    end
+
+    test "context/1 accepts :stdin and :clock_res keys (Req 9.3)" do
+      # Test :stdin with both fixed and fun shapes
+      stdin_fixed = WaWasi.context(%{stdin: {:fixed, <<"test">>}})
+      assert :wa_wasi_ctx.stdin(stdin_fixed) == {:fixed, <<"test">>}
+
+      stdin_fun = WaWasi.context(%{stdin: {:fun, fn _max -> {<<1::8>>, :fixed} end}})
+      assert {:fun, _} = :wa_wasi_ctx.stdin(stdin_fun)
+
+      # Test :clock_res with both fixed and fun shapes
+      clock_res_fixed = WaWasi.context(%{clock_res: {:fixed, 1000, 1}})
+      assert :wa_wasi_ctx.clock_res(clock_res_fixed) == {:fixed, 1000, 1}
+
+      clock_res_fun = WaWasi.context(%{clock_res: {:fun, fn _ -> 25 end}})
+      assert {:fun, _} = :wa_wasi_ctx.clock_res(clock_res_fun)
+
+      # Verify round-trip through accessors
+      opts = %{
+        stdin: {:fixed, <<"input">>},
+        clock_res: {:fixed, 1000, 25}
+      }
+
+      ctx = WaWasi.context(opts)
+      assert :wa_wasi_ctx.stdin(ctx) == {:fixed, <<"input">>}
+      assert :wa_wasi_ctx.clock_res(ctx) == {:fixed, 1000, 25}
     end
 
     test "imports/2 delegates to :wa_wasi.imports/2 with the same shape" do
@@ -211,6 +238,49 @@ defmodule WaWasiTest do
       ns = Map.fetch!(imports, <<"wasi_snapshot_preview1">>)
       assert is_function(Map.fetch!(ns, <<"fd_write">>), 4)
       assert is_function(Map.fetch!(ns, <<"proc_exit">>), 1)
+    end
+
+    # Task 9.2: new passthroughs delegate to their :wa_wasi_preview1 counterparts
+    test "clock_res_get/4 delegates to :wa_wasi_preview1.clock_res_get/4" do
+      ctx = WaWasi.context(%{clock_res: {:fixed, 1000, 25}})
+      handle = TestMemory.new(8)
+      acc = {TestMemory, handle}
+      ret = WaWasi.clock_res_get(acc, ctx, 0, 0)
+      assert ret == :wa_wasi_preview1.esuccess()
+      # The host wrote the resolution (1000 ns) at offset 0
+      assert TestMemory.dump(handle) == <<1000::64-little>>
+    end
+
+    test "sched_yield/1 delegates to :wa_wasi_preview1.sched_yield/1" do
+      ctx = WaWasi.context(%{})
+      ret = WaWasi.sched_yield(ctx)
+      assert ret == :wa_wasi_preview1.esuccess()
+    end
+
+    test "fd_fdstat_get/4 delegates to :wa_wasi_preview1.fd_fdstat_get/4" do
+      ctx = WaWasi.context(%{})
+      handle = TestMemory.new(24)
+      acc = {TestMemory, handle}
+      ret = WaWasi.fd_fdstat_get(acc, ctx, 1, 0)
+      assert ret == :wa_wasi_preview1.esuccess()
+      # The host wrote the fd 1 fdstat struct at offset 0
+      struct = TestMemory.dump(handle)
+      assert byte_size(struct) == 24
+      # character_device
+      assert binary_part(struct, 0, 1) == <<2>>
+    end
+
+    test "fd_read/6 delegates to :wa_wasi_preview1.fd_read/6" do
+      ctx = WaWasi.context(%{stdin: {:fixed, <<"hello">>}})
+      # Setup: iovec array at 0 ({ptr=16, len=5}), nread slot at 8, buffer at 16
+      handle = TestMemory.new(32)
+      acc = {TestMemory, handle}
+      :ok = TestMemory.write_bytes(handle, 0, <<16::32-little, 5::32-little>>)
+      ret = WaWasi.fd_read(acc, ctx, 0, 0, 1, 8)
+      assert ret == :wa_wasi_preview1.esuccess()
+      # The host filled the buffer with the first 5 bytes from stdin
+      mem = TestMemory.dump(handle)
+      assert binary_part(mem, 16, 5) == <<"hello">>
     end
   end
 end
