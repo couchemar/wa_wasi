@@ -10,6 +10,27 @@ Elixir wrapper `wa_wasi_ex`, which are versioned together.
 
 ## [Unreleased]
 
+### Added
+
+- Non-filesystem preview1 completion — four new `wasi_snapshot_preview1` host
+  functions: `clock_res_get` (reports a clock's resolution; realtime id 0 /
+  monotonic id 1, unknown ids return `EINVAL`), `sched_yield` (a no-op
+  scheduler yield that always succeeds), `fd_fdstat_get` (writes the 24-byte
+  fdstat struct for the standard fds — `character_device` with the `fd_write`
+  right for fd 1/2 and the `fd_read` right for a configured fd 0), and `fd_read`
+  (the read counterpart of `fd_write`, filling iovec buffers from a configured
+  stdin source on fd 0 and writing the total bytes read).
+- Two new `wa_wasi_ctx` capabilities, each defaulting to absent (no ambient host
+  read): a Stdin_Source (`:stdin` — `{fixed, Bytes}` / `{fun, F}`) supplying the
+  bytes readable on fd 0, and a Clock_Resolution_Source (`:clock_res` —
+  `{fixed, RtNs, MonoNs}` / `{fun, F}`) supplying per-clock resolutions, with
+  shape validation and `require_stdin/1` / `require_clock_res/1` resolvers.
+- `encode_u16/1` little-endian codec helper and named Fdstat/Rights/Filetype
+  constants (no new Errno beyond the existing four).
+- `WaWasi` Elixir passthroughs for the four new functions (`clock_res_get/4`,
+  `sched_yield/1`, `fd_fdstat_get/4`, `fd_read/6`); `context/1` now accepts the
+  `:stdin` and `:clock_res` keys.
+
 ## [0.1.0] - 2026-09-30
 
 ### Added
