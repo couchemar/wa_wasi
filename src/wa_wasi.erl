@@ -31,7 +31,9 @@
     clock_res_get_fun/2,
     sched_yield_fun/2,
     fd_fdstat_get_fun/2,
-    fd_read_fun/2
+    fd_read_fun/2,
+    fd_close_fun/2,
+    fd_seek_fun/2
 ]).
 
 %% The WASM import module name WASI preview1 functions are published under.
@@ -56,7 +58,9 @@ imports(Accessor, Ctx) ->
             <<"clock_res_get">> => clock_res_get_fun(Accessor, Ctx),
             <<"sched_yield">> => sched_yield_fun(Accessor, Ctx),
             <<"fd_fdstat_get">> => fd_fdstat_get_fun(Accessor, Ctx),
-            <<"fd_read">> => fd_read_fun(Accessor, Ctx)
+            <<"fd_read">> => fd_read_fun(Accessor, Ctx),
+            <<"fd_close">> => fd_close_fun(Accessor, Ctx),
+            <<"fd_seek">> => fd_seek_fun(Accessor, Ctx)
         }
     }.
 
@@ -154,4 +158,17 @@ fd_fdstat_get_fun(Accessor, Ctx) ->
 fd_read_fun(Accessor, Ctx) ->
     fun(Fd, IovsPtr, IovsLen, NreadPtr) ->
         wa_wasi_preview1:fd_read(Accessor, Ctx, Fd, IovsPtr, IovsLen, NreadPtr)
+    end.
+% fd_close takes 1 WASM param (Fd) and returns errno.
+-spec fd_close_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun((integer()) -> integer()).
+fd_close_fun(Accessor, Ctx) ->
+    fun(Fd) -> wa_wasi_preview1:fd_close(Accessor, Ctx, Fd) end.
+
+% fd_seek takes 4 WASM params (Fd, Offset, Whence, NewOffsetPtr) and returns errno.
+-spec fd_seek_fun(wa_wasi_memory:accessor(), wa_wasi_ctx:t()) ->
+    fun((integer(), integer(), integer(), integer()) -> integer()).
+fd_seek_fun(Accessor, Ctx) ->
+    fun(Fd, Offset, Whence, NewOffsetPtr) ->
+        wa_wasi_preview1:fd_seek(Accessor, Ctx, Fd, Offset, Whence, NewOffsetPtr)
     end.

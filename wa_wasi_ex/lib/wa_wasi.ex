@@ -118,4 +118,15 @@ defmodule WaWasi do
   def fd_read(accessor, ctx, fd, iovs_ptr, iovs_len, nread_ptr) do
     :wa_wasi_preview1.fd_read(accessor, ctx, fd, iovs_ptr, iovs_len, nread_ptr)
   end
+  @doc "See `:wa_wasi_preview1.fd_close/3`."
+  @spec fd_close(accessor(), ctx(), integer()) :: integer()
+  def fd_close(accessor, ctx, fd) do
+    :wa_wasi_preview1.fd_close(accessor, ctx, fd)
+  end
+
+  @doc "See `:wa_wasi_preview1.fd_seek/6`."
+  @spec fd_seek(accessor(), ctx(), integer(), integer(), integer(), integer()) :: integer()
+  def fd_seek(accessor, ctx, fd, offset, whence, new_offset_ptr) do
+    :wa_wasi_preview1.fd_seek(accessor, ctx, fd, offset, whence, new_offset_ptr)
+  end
 end

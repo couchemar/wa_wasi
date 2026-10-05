@@ -650,3 +650,20 @@ write_all(_Accessor, []) ->
 write_all(Accessor, [{Ptr, Bytes} | Rest]) ->
     ok = wa_wasi_memory:write(Accessor, Ptr, Bytes),
     write_all(Accessor, Rest).
+%% fd_close (Req 8)
+%% Signature: (Accessor, Ctx, Fd) -> Errno.
+%% No-op since we don't track fd state.
+ -spec fd_close(wa_wasi_memory:accessor(), wa_wasi_ctx:t(), integer()) -> integer().
+ fd_close(_Accessor, _Ctx, _Fd) ->
+     ?ESUCCESS.
+
+%% fd_seek (Req 9)
+%% Signature: (Accessor, Ctx, Fd, Offset, Whence, NewOffsetPtr) -> Errno.
+%% Writes 0 to NewOffsetPtr as the new offset (u64 little-endian).
+ -spec fd_seek(wa_wasi_memory:accessor(), wa_wasi_ctx:t(),
+               integer(), integer(), integer(), integer()) -> integer().
+ fd_seek(Accessor, _Ctx, _Fd, _Offset, _Whence, NewOffsetPtr) ->
+     case wa_wasi_memory:write(Accessor, NewOffsetPtr, encode_u64(0)) of
+         ok -> ?ESUCCESS;
+         {error, efault} -> ?EFAULT
+     end.
