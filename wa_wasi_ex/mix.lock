@@ -8,5 +8,5 @@
   "wa_embedder": {:hex, :wa_embedder, "0.2.1", "a2ffc02adfac3aea278f762bf29ecf48862843081acd1b186ceb00f15fdc8027", [:rebar3], [{:wa_parser, "~> 0.1", [hex: :wa_parser, repo: "hexpm", optional: false]}], "hexpm", "bd5142bd99b847da2f8e6ff5ea746cbe1da5c13f577eb86e8fa46830346118a8"},
   "wa_embedder_ex": {:hex, :wa_embedder_ex, "0.2.1", "e3031bb64ec08edece192cc728a5968e568b1c9f0854199baf24a38863f34c84", [:mix], [{:wa_embedder, "~> 0.2", [hex: :wa_embedder, repo: "hexpm", optional: false]}], "hexpm", "7c1cd34c31f88cb1969bc326371f130634dc7ab1a577648d3beae930a2792b40"},
   "wa_parser": {:hex, :wa_parser, "0.1.2", "a2d5aacf98907f80fa65c3d3be7220ae141bbb136a511eb71e676978b10f99d6", [:rebar3], [], "hexpm", "7d5d553de5ba2a0eb41a0879fd7d84d15419173522ddf8c482782e1549d6cec8"},
-  "wa_wasi": {:hex, :wa_wasi, "0.1.0", "daa82b6f25b2c97874401fd7857109fd2e6da49b04b6d26d51dfe04791489d23", [:rebar3], [], "hexpm", "c7290005668912ca4f2444121bba52bea6637afe67efed8ce8d0ddbc50e8833a"},
+  "wa_wasi": {:hex, :wa_wasi, "0.2.0", "2aa3f0710ad34fed59acf57dd3cf854cfd6856371d76908c2e2dc3f6d625aabc", [:rebar3], [], "hexpm", "59b2c83dda8a79419faa8b2de7219efad34e3263c6df9651098669839b5324ab"},
 }

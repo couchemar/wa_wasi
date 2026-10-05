@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file covers both packages in the repo: the Erlang core `wa_wasi` and the
 Elixir wrapper `wa_wasi_ex`, which are versioned together.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-05
 
 ### Added
 
@@ -30,6 +30,8 @@ Elixir wrapper `wa_wasi_ex`, which are versioned together.
 - `WaWasi` Elixir passthroughs for the four new functions (`clock_res_get/4`,
   `sched_yield/1`, `fd_fdstat_get/4`, `fd_read/6`); `context/1` now accepts the
   `:stdin` and `:clock_res` keys.
+- Two additional preview1 host functions: `fd_close` and `fd_seek`.
+- `WaWasi` Elixir passthroughs for `fd_close/3` and `fd_seek/6`.
 
 ## [0.1.0] - 2026-09-30
 
@@ -59,4 +61,5 @@ Elixir wrapper `wa_wasi_ex`, which are versioned together.
   `EFAULT`, leaving memory unmodified.
 
 [Unreleased]: https://github.com/couchemar/wa_wasi
+[0.2.0]: https://github.com/couchemar/wa_wasi
 [0.1.0]: https://github.com/couchemar/wa_wasi

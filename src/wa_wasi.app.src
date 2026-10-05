@@ -1,6 +1,6 @@
 {application, wa_wasi, [
   {description, "WASI preview1 host functions for the Erlang ecosystem"},
-  {vsn, "0.1.0"},
+  {vsn, "0.2.0"},
   {modules, []},
   {registered, []},
   {applications, [kernel, stdlib]},

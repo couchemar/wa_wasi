@@ -25,7 +25,8 @@
 -export([clock_time_get/5, random_get/4]).
 -export([proc_exit/2]).
 %% Non-filesystem preview1 completion.
--export([clock_res_get/4, sched_yield/1, fd_fdstat_get/4, fd_read/6]).
+-export([clock_res_get/4, sched_yield/1, fd_fdstat_get/4, fd_read/6,
+         fd_close/3, fd_seek/6]).
 
 %% Test/inspection helper: bytes accumulated by a `collect' sink in this
 %% process, per fd. Not part of the WASI ABI.
